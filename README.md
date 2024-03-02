@@ -1,6 +1,10 @@
 # Computational-Content-Analysis_Final-Project_2024
 This is the repository for the course's final project
 
+Group Name: AI in Course Syllabi
+
+Group Member: Runlin Wang
+
 Pitch: 
 
 My research is essentially driven by a concern for the integration of AI guidelines in education, especially given the rapid advancement of (generative) AI tools, as demonstrated by platforms such as ChatGPT. This led to my research question: How are U.S. public universities adapting their educational policies, particularly within course syllabi, to address "AI" and its associated regulations in an ethical manner, especially in guiding faculty and students? The importance of this research stems from the significant impact of ChatGPT's launch in November 2022, which not only garnered widespread public interest, but also marked an inevitable shift in the educational landscape. As a student who has witnessed the growing popularity of generative AI in educational settings, I am interested in exploring how institutions, instructors, and students are adapting to and managing its widespread influence.  
