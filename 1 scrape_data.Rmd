@@ -1,0 +1,387 @@
+---
+title: "AI_in_Course_Syllabi"
+subtitle: "scrape_data"
+author: "Runlin Wang"
+date: "3/3/2024"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA,
+                      cache = TRUE)
+```
+# Load Packages
+
+```{r}
+library(RSelenium)
+library(rvest)
+library(tidyverse)
+library(KeyboardSimulator)
+```
+# Scrape Data
+
+```{r}
+url = 'https://webapps.lsa.umich.edu/syllabi/default.aspx'
+```
+```{r}
+remDr = remoteDriver(browserName = "chrome")  # Specify the browser to be used for the operation
+remDr$open()  # Open browser
+remDr$setTimeout(type = "script", milliseconds = 100000000)  # Setting the script timeout limit
+remDr$setTimeout(type = "implicit", milliseconds = 100000000)  # Setting the driver search element timeout limit
+remDr$setTimeout(type = "page load", milliseconds = 100000000)  # Setting the timeout for page loading
+remDr$navigate(url)  # Opens a web page at the specified URL
+```
+## Set ID button
+
+```{r}
+ID_btn = remDr$findElement(using = 'xpath',
+                           value = '/html/body/main/div/div/form/fieldset/div[1]/div/input')
+```
+## Set the Password button
+
+```{r}
+password_btn = remDr$findElement(using = 'xpath',
+                                 value = '/html/body/main/div/div/form/fieldset/div[2]/div/input')
+```
+## Enter the ID and Password into the ID text box and Password text box of the browser
+
+```{r}
+ID_btn$sendKeysToElement(list("runlinw"))
+password_btn$sendKeysToElement(list("RAYray0525playing"))
+```
+## Set the Log In button
+
+```{r}
+log_btn = remDr$findElement(using = 'xpath',
+                            value = '/html/body/main/div/div/form/fieldset/input')
+```
+## Click the Log In button
+
+```{r}
+log_btn$clickElement()
+```
+## Define the function to grab the PDFs (the actual course syllabi) of the current page
+
+```{r}
+download_pdf = function(course_table){
+  for(l in 1:nrow(course_table)){
+    # Save the course name corresponding to the current PDF
+    course_name[length(course_name)+1] <<- str_c(department_text[[1]],
+                                                 terms[index_2023[j]-1],
+                                                 course_table$`Course Name`[l],
+                                                 sep = '--')
+    
+    # Setting the Link button
+    link_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[5]/div/table/tbody/tr[',l+1,']/td[5]/a')
+    link_btn = remDr$findElement(using = 'xpath', value = link_xpath)
+    
+    # Get the url of the current Link
+    # pdf_url = webpage %>%
+    #   html_element(xpath = link_xpath) %>%
+    #   html_attr('href') %>%
+    #   str_c('https://webapps.lsa.umich.edu/syllabi/',.)
+    
+    # options(timeout = 999999999999)
+    # download.file(url = pdf_url,destfile = 'PDF/1.pdf',method = 'auto')
+    
+    # pdf_url = unlist(remDr$getCurrentUrl())
+    # 
+    # download.file(url = pdf_url,destfile = 'PDF/test.pdf')
+    # library(httr)
+    # 
+    # GET('https://cran.r-project.org/web/packages/RSelenium/RSelenium.pdf',
+    #     authenticate("runlinw", "RAYray0525playing"),
+    #     write_disk(path = 'PDF/test.pdf'))
+    
+    # Click the Link button
+    link_btn$clickElement()
+    
+    # Hibernate for 3 seconds
+    Sys.sleep(3)
+    
+    # Define the switching window function
+    myswitch <- function (remDr, windowId){
+      qpath <- sprintf("%s/session/%s/window", remDr$serverURL,
+                       remDr$sessionInfo[["id"]])
+      remDr$queryRD(qpath, "POST", qdata = list(handle = windowId))}
+    
+    # All current window handles
+    all_handle = remDr$getWindowHandles()
+    # current_handle = remDr$getCurrentWindowHandle()
+    
+    # Switch to PDF window
+    myswitch(remDr = remDr, windowId = all_handle[[2]])
+    
+    # Move the mouse position to the Download button
+    remDr$mouseMoveToLocation(x = 920,y = 25)
+    
+    # Hibernate for 0.5 seconds
+    Sys.sleep(0.5)
+    
+    # Click on the left mouse button to download
+    remDr$click(1)
+    
+    # Move the mouse position to the file name naming block
+    mouse.move(x = 652,y = 571)
+    
+    # Click the left mouse button to select the file name naming block
+    mouse.click("left")
+    
+    # Hibernate for 1 second
+    Sys.sleep(1)
+    
+    # Entering the file name from the keyboard
+    keybd.type_string(str_c(length(course_name),'.pdf'))
+    
+    # Hibernate for 1 second
+    Sys.sleep(1)
+    
+    # Move the mouse position to the Save button
+    mouse.move(x = 707,y = 648)
+    
+    # Click the left mouse button to save the file
+    mouse.click('left')
+    
+    # Hibernate for 1 second
+    Sys.sleep(1)
+    
+    # Close the current PDF window
+    remDr$closeWindow()
+    
+    # Switch back to the main page
+    all_handle = remDr$getWindowHandles()
+    myswitch(remDr = remDr, windowId = all_handle[[1]])
+  } 
+}
+```
+## Download all PDFs (the actual course syllabi) and store all necessary information
+
+```{r}
+course_name = c()
+rank_n_page = 0
+last_n_page = FALSE
+for(i in 1:69){
+  # Set the Department button
+  department_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[3]/div[1]/div/div[2]/div/span/input[',i,']')
+  department_btn = remDr$findElement(using = 'xpath',
+                                     value = department_xpath)
+  # Get department name
+  department_text_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[3]/div[1]/div/div[2]/div/span/label[',i,']')
+  department_text_btn = remDr$findElement(using = 'xpath',
+                                          value = department_text_xpath)
+  
+  department_text = department_text_btn$getElementText()
+  
+  # Click on the Department button
+  department_btn$clickElement()
+  
+  # Set hibernation for 3 seconds
+  Sys.sleep(1.5)
+  
+  # Set the Term button
+  term_btn = remDr$findElement(using = 'xpath',
+                               value = '/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[1]/div[2]/select')
+  
+  # Get the current department's terms
+  terms_text = term_btn$getElementText()
+  terms = terms_text %>% 
+    unlist() %>% 
+    str_remove('Select\n') %>% 
+    str_split('\n') %>% 
+    unlist() %>% 
+    str_trim()
+  
+  # Extract the current department's term years
+  term_year = parse_number(terms)
+  index_2023 = which(term_year>=2023) + 1
+  
+  # If the current department does not have information for 2023 and beyond, jump to the next department
+  if(is_empty(index_2023)){
+    next
+  } else{
+    # Otherwise, continue clicking on each 2023 and subsequent Term sub-button
+    for(j in seq_along(index_2023)){
+      # Set the current Term sub-button
+      term_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[1]/div[2]/select/option[',index_2023[j],']')
+      term_btn = remDr$findElement(using = 'xpath',
+                                   value = term_xpath)
+      # Click on the current Term sub-button
+      term_btn$clickElement()
+      
+      # Set hibernation for 3 seconds
+      Sys.sleep(1.5)
+      
+      # View the number of subjects
+      subjects = remDr$findElement(using = 'xpath',
+                                   value = '/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[2]/div[2]')
+      subjects_content = subjects$getElementText()
+      subjects_content = unlist(subjects_content)
+      subjects_content = str_split(subjects_content,'\n')
+      subjects_content = unlist(subjects_content)
+      
+      # If no subject, then skip
+      if(all(subjects_content=='')){
+        next
+      } else{
+        # Iterate over each subject
+        for(k in seq_along(subjects_content)){
+          # Set the Subject button
+          subject_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[2]/div[2]/span/input[',k,']')
+          subject = remDr$findElement(using = 'xpath',
+                                      value = subject_xpath)
+          
+          # Click the Subject button
+          subject$clickElement()
+          
+          # Set hibernation for 3 seconds
+          Sys.sleep(1.5)
+          
+          # Set the Show All button for course
+          course_btn = remDr$findElement(using = 'xpath',
+                                         value = '/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[3]/div[2]/select/option[2]')
+          
+          # Click the Show All button for course
+          course_btn$clickElement()
+          
+          # Set hibernation for 3 seconds
+          Sys.sleep(1.5)
+          
+          # Set instructors' Show All button
+          instructor_btn = remDr$findElement(using = 'xpath',
+                                             value = '/html/body/form/div[3]/div[3]/div/div[3]/div[2]/div[4]/div[2]/select/option[2]')
+          
+          # Click the Show All button for instructors.
+          instructor_btn$clickElement()
+          
+          # Set hibernation for 3 seconds
+          Sys.sleep(1.5)
+          
+          # Set the Search button
+          search_btn = remDr$findElement(using = 'xpath',
+                                         value = '/html/body/form/div[3]/div[3]/div/div[4]/div/a[1]')
+          
+          # Click the Search button
+          search_btn$clickElement()
+          
+          # Set hibernation for 3 seconds
+          Sys.sleep(1.5)
+          
+          # Get current page
+          webpage = read_html(remDr$getPageSource() %>% unlist())  
+          
+          # Get course table
+          course_table_list = webpage %>% 
+            html_table()
+          
+          # If no courses
+          if(length(course_table_list)==0){
+            next
+          } else if(length(course_table_list)==1){
+            # If only one page of courses
+            # Iterate through each course's link
+            course_table = course_table_list[[1]]
+            
+            # Download PDFs of current page
+            download_pdf(course_table)
+            
+          } else{
+            # If multi-page courses
+            rank_n_page = rank_n_page + 1
+            
+            # If not the first page in multi-page 
+            if(rank_n_page>1 & last_n_page==TRUE){
+              
+              page1_btn_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[5]/div/table/tbody/tr[',
+                                      nrow(course_table_list[[1]]),
+                                      ']/td/table/tbody/tr/td[1]/a')
+              
+              # Define Page button for page 1
+              page1_btn = remDr$findElement(using = 'xpath',
+                                            value = page1_btn_xpath)
+              
+              # Click to jump to the first page
+              page1_btn$clickElement()
+              
+              # Hibernate for 1.5 seconds
+              Sys.sleep(1.5)
+              
+              # Get current page
+              webpage = read_html(remDr$getPageSource() %>% unlist())  
+              
+              # Get course table
+              course_table_list = webpage %>%
+                html_table()
+            }
+            
+            # Number of current pages
+            n_page = ncol(course_table_list[[2]])
+            
+            # Scrape the PDFs of page 1
+            course_table = course_table_list[[1]]
+            course_table = course_table[1:(nrow(course_table)-2),1:4]
+            
+            # Download PDFs of current page
+            download_pdf(course_table)
+            
+            # Scrape the courses after page 1
+            for(m in 2:n_page){
+              
+              # Define the Page button for the current page
+              page_btn_xpath = str_c('/html/body/form/div[3]/div[3]/div/div[5]/div/table/tbody/tr[77]/td/table/tbody/tr/td[',m,']/a')
+              page_btn = remDr$findElement(using = 'xpath',
+                                           value = page_btn_xpath)
+              
+              # Click on the button to jump to the next page
+              page_btn$clickElement()
+              
+              # Hibernate for 1.5 seconds
+              Sys.sleep(1.5)
+              
+              # Get current page
+              webpage = read_html(remDr$getPageSource() %>% unlist())  
+              
+              # Get course table
+              course_table_list = webpage %>%
+                html_table()
+              
+              course_table = course_table_list[[1]]
+              course_table = course_table[1:(nrow(course_table)-2),1:4]
+              
+              # Download PDFs of current page
+              download_pdf(course_table)
+            }
+          }
+          
+          # If there is only 1 course page
+          if(length(course_table_list)==1){
+            last_n_page = FALSE
+          }
+          
+          # If there are currently multiple course pages
+          if(length(course_table_list)>1){
+            last_n_page = TRUE
+          }
+        } 
+      }
+    }
+  }
+}
+
+write.table(course_name, "course_name.txt")
+```
+```{r}
+remDr$close()
+```

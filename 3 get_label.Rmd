@@ -1,0 +1,152 @@
+---
+title: "AI_in_Course_Syllabi"
+subtitle: "get_label"
+author: "Runlin Wang"
+date: "3/3/2024"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA,
+                      cache = TRUE)
+```
+# Load Packages
+
+```{r}
+library(tidyverse)
+library(httr)
+```
+# Import Data
+
+## Read the organized data
+
+```{r}
+data = read_csv('course_text.csv')
+```
+# Get labels through GPT-4
+
+```{r}
+# Remove observations where `content` is NA and remove duplicate observations
+new_data = data %>% 
+  drop_na(content) %>% 
+  distinct(department,term,course,content,
+           .keep_all = TRUE) %>% 
+  mutate(label = NA)
+```
+```{r}
+# Ask questions to ChatGPT; save and clean answers
+my_API = "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"
+hey_chatGPT = function(answer_my_question) {
+  chat_GPT_answer <- POST(
+    url = "https://api.openai.com/v1/chat/completions",
+    add_headers(Authorization = paste("Bearer", my_API)),
+    content_type_json(),
+    encode = "json",
+    body = list(
+      model = "gpt-4",
+      messages = list(
+        list(
+          role = "user",
+          content = answer_my_question
+        )
+      )
+    )
+  )
+  str_trim(content(chat_GPT_answer)$choices[[1]]$message$content)
+}
+```
+```{r}
+for(i in 1:nrow(new_data)){
+  ask_content = 'Based on the text below, please decide whether the text supports the use of AI/gpt/chatgpt, opposes the use of AI/gpt/chatgpt, is neutral about the use of AI/gpt/chatgpt, or does not mention AI/gpt/chatgpt at all. Note that "al" in the text may mean "ai". Only answer "yes" if the text supports the use of AI/gpt/chatgpt, "no" if the text opposes the use of AI/gpt/chatgpt, "neutral" if the text is neutral about the use of AI/gpt/chatgpt, or "unknown" if the text does not mention AI/gpt/chatgpt at all. Be careful to answer with only one word! Below is the content of the text: '
+  
+  # content = str_extract_all(string = str_to_lower(new_data$content[i]),
+  #                           pattern = '\\b(genai|ai|al|gpt)\\b(.+\n)+')
+  # content = unlist(content)
+  # content = paste(content,collapse = ' ')
+  
+  # Find AI-related content in each course syllabus
+  text = str_to_lower(new_data$content[i])
+  split_text = str_split(text,'\n') %>% unlist()
+  test_ai_words = map_lgl(.x = split_text,
+                          .f = ~ str_detect(string = .x,pattern = '\\b(genal|genai|ai|al|gpt|chatgpt|chat-gpt|chatbots)\\b'))
+  
+  if(all(!test_ai_words)){
+    content = ''
+  } else{
+    
+    n = which(test_ai_words)
+    
+    if(any(diff(n)>50)){
+      
+      break_point = which(diff(n)>50)
+      content = list()
+      content[[1]] = split_text[n[1:break_point[1]]]
+      
+      for(j in seq_along(break_point)){
+        
+        if(j<length(break_point)){
+          content[[j+1]] = split_text[n[(break_point[j]+1):break_point[j+1]]]
+        } else{
+          content[[j+1]] = split_text[n[(break_point[j]+1):length(n)]]
+        }
+        
+      }
+      
+      content = list_c(content)
+      content = str_c(content,collapse = ' ')
+
+    } else{
+      n_first = min(n)
+      n_last = max(which(test_ai_words))
+      if(n_last*1.1>length(test_ai_words)){
+        n_last = length(test_ai_words)
+        } else{
+          n_last = round(n_last*1.1)
+        }
+      
+      content = str_c(split_text[n_first:n_last],collapse = ' ')
+      
+    }
+  }
+  
+  # Start getting labels
+  if(content==''){
+    new_data$label[i] = 'unknown'
+  } else{
+    question = str_c(ask_content,content)
+    for(j in 1:5){
+      answer = hey_chatGPT(question)
+      Sys.sleep(runif(n = 1,min = 2,max = 3))
+      if(length(answer)!=0){
+        break
+      } else{
+        answer = NA
+      }
+    }
+    
+    new_data$label[i] = answer
+    
+  }
+}
+```
+# Output the processed data
+
+```{r}
+rm(data)
+write_csv(new_data,'new_data.csv')
+new_data %>% 
+  select(id,label) %>% 
+  write_csv('label.csv')
+```

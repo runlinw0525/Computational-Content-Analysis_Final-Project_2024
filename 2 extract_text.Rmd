@@ -1,0 +1,97 @@
+---
+title: "AI_in_Course_Syllabi"
+subtitle: "extract_text"
+author: "Runlin Wang"
+date: "3/3/2024"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA,
+                      cache = TRUE)
+```
+# Load Packages 
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(pdftools)
+library(tesseract)
+library(furrr)
+```
+# Import Data, Extract Text Content, and Combine with Necessary Information to Create a Data Frame
+
+## Read the .txt files containing course information
+
+```{r}
+course_name1 = read.table('course_name/course_name1.txt',header = T,sep = ',')
+course_name2 = read.table('course_name/course_name2.txt',header = T,sep = ',')
+```
+## Create a data frame to store each syllabus' information and the text content in each PDF
+
+```{r}
+course_text = bind_rows(course_name1, course_name2) %>% 
+  mutate(id = str_extract(x,'[[:digit:]]+ '),
+         id = parse_number(id),
+         x = str_remove(x,'[[:digit:]]+ '),
+         split = str_split(x,'--'),
+         department = map_chr(.x = split,
+                              .f = ~unlist(.x)[1]),
+         term = map_chr(.x = split,
+                        .f = ~unlist(.x)[2]),
+         course = map_chr(.x = split,
+                          .f = ~unlist(.x)[3])) %>% 
+  select(-x,-split) %>% 
+  select(id,department,term,course) %>% 
+  drop_na()
+```
+## Extract the text content of each PDF
+
+```{r}
+pdf_names = list.files('PDF')
+
+extract_text_pdf = function(pdf_name){
+  id_pdf = parse_number(pdf_name)
+  text_pdf = pdf_ocr_text(pdf = str_c('PDF/',pdf_name))
+  result = tibble(id = id_pdf, text = text_pdf)
+  return(result)
+}
+
+plan(multisession, workers = 12)
+pdf_text = future_map(.x = pdf_names,
+                      .f = ~extract_text_pdf(pdf_name = .x),
+                      .progress = TRUE)
+```
+## Merge text content from different pages in the same PDF
+
+```{r}
+pdf_text = do.call('rbind',pdf_text)
+pdf_text = pdf_text %>% 
+  group_by(id) %>% 
+  summarise(content = str_c(text,collapse = ' ')) %>% 
+  ungroup()
+```
+## Merge course information and text content
+
+```{r}
+course_text = course_text %>% 
+  full_join(pdf_text,by = 'id')
+```
+# Output results
+
+```{r}
+write_csv(course_text,'course_text.csv')
+```

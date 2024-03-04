@@ -1,0 +1,948 @@
+---
+title: "AI_in_Course_Syllabi"
+subtitle: "analyze_text"
+author: "Runlin Wang"
+date: "3/3/2024"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      comment = NA,
+                      cache = TRUE)
+```
+# Load Packages
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(stopwords)
+library(SnowballC)
+library(wordcloud)
+library(widyr)
+library(ggforce)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+```
+# Import Data
+
+## Read the organized data
+
+```{r}
+new_data = read_csv('new_data.csv')
+```
+# Data Preprocessing
+
+## Read the data; replace "_" in text content with a space; tokenize the text content; delete the number words; delete the stop words; stem (an unknown step) 
+
+```{r}
+# add stop words related to course syllabi (uninformative words)
+stopwords_user = tibble(word = c('student','class','exam','assignment','read',
+                                 'write','week','time','ctp','ynp','http','https'), 
+                        lexicon = 'user')
+```
+```{r}
+token_data = new_data %>% 
+  mutate(content = str_replace_all(content,'_',' ')) %>% 
+  unnest_tokens(output = 'word',
+                input = 'content',
+                token = 'words') %>% 
+  mutate(word = if_else(word=='al','ai',word)) %>% 
+  filter(!str_detect(word,'[[:digit:]]+')) %>% 
+  anti_join(bind_rows(stop_words,stopwords_user),by = 'word')
+# %>% 
+#   mutate(word = wordStem(word))
+```
+# Perform text analysis and visualize the findings
+
+## Frequency count
+
+```{r}
+new_data %>% 
+  count(label) %>% 
+  drop_na() %>% 
+  filter(label!='unknown') %>% 
+  ggplot(aes(x = label,y = n,fill = label)) +
+  geom_col() +
+  labs(x = 'Attitude to AI',
+       y = 'Frequency',
+       title = 'Frequency of Attitudes to AI') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+## Proportional analysis by department
+
+```{r}
+new_data %>% 
+  filter(label!='unknown') %>% 
+  count(department,label) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = department,y = n,fill = label)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  coord_flip() +
+  labs(x = 'Proportion',
+       y = 'Department',
+       fill = 'Attitude to AI',
+       title = 'Proportion of Attitude to AI by Departments') +
+  theme_light()
+```
+## Top words in all PDFs
+
+```{r}
+token_data %>% 
+  count(word) %>% 
+  slice_max(order_by = n,n = 30) %>% 
+  mutate(word = fct_reorder(word,n)) %>% 
+  ggplot(aes(x = word,y = n)) +
+  geom_col(fill = 'lightblue') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       title = 'Top words') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+## Top words by different labels
+
+```{r}
+token_data %>% 
+  drop_na(label) %>% 
+  count(label,word) %>% 
+  group_by(label) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  mutate(word = reorder_within(x = word,by = n,within = label)) %>% 
+  ggplot(aes(x = word,y = n,fill = label)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~label,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       title = 'Top words',
+       fill = 'Attitude to AI') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+## Frequency of AI words
+
+```{r}
+ai_words = c('ai','al','gpt','chatgpt','generative','trained','transformer','artificial','intelligence','genai')
+```
+```{r}
+token_data %>% 
+  filter(word %in% ai_words) %>% 
+  count(department) %>% 
+  mutate(department = fct_reorder(department,n)) %>% 
+  ggplot(aes(x = department,y = n)) +
+  geom_col(fill = 'darkblue') +
+  labs(x = 'Department',
+       y = 'Frequency',
+       title = 'Rank of department by frequency of using AI words') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 7))
+```
+## Frequency of AI words for "yes" label
+
+```{r}
+token_data %>% 
+  filter(word %in% ai_words,
+         label=='yes') %>% 
+  count(department) %>% 
+  mutate(department = fct_reorder(department,n)) %>% 
+  ggplot(aes(x = department,y = n)) +
+  geom_col(fill = 'darkgreen') +
+  labs(x = 'Department',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Rank of department by frequency of using AI words') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8))
+```
+## Frequency of AI words for "no" label
+
+```{r}
+token_data %>% 
+  filter(word %in% ai_words,
+         label=='no') %>% 
+  count(department) %>% 
+  mutate(department = fct_reorder(department,n)) %>% 
+  ggplot(aes(x = department,y = n)) +
+  geom_col(fill = 'darkred') +
+  labs(x = 'Department',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: no',
+       title = 'Rank of department by frequency of using AI words') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8))
+```
+## Frequency of AI words for "neutral" label
+
+```{r}
+token_data %>% 
+  filter(word %in% ai_words,
+         label=='neutral') %>% 
+  count(department) %>% 
+  mutate(department = fct_reorder(department,n)) %>% 
+  ggplot(aes(x = department,y = n)) +
+  geom_col(fill = 'blue') +
+  labs(x = 'Department',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Rank of department by frequency of using AI words') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8))
+```
+## Sentiment analysis using different lexicons
+
+```{r}
+bing_sentiment = get_sentiments('bing')
+nrc_sentiment = get_sentiments('nrc')
+afinn_sentiment = get_sentiments('afinn')
+```
+### Bing
+
+```{r}
+token_data %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+### Bing with different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: no',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+### NRC
+
+```{r}
+token_data %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 5) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 8),
+        legend.position = 'none')
+```
+### NRC with different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 5) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 5) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: no',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 5) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(sentiment,word) %>% 
+  group_by(sentiment) %>% 
+  slice_max(order_by = n,n = 5) %>% 
+  ungroup() %>% 
+  mutate(word = reorder_within(x = word,by = n,within = sentiment)) %>% 
+  ggplot(aes(x = word,y = n,fill = sentiment)) +
+  geom_col() +
+  scale_x_reordered() +
+  facet_wrap(~sentiment,scales = 'free') +
+  labs(x = 'Word',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Top words by sentiment') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8),
+        legend.position = 'none')
+```
+### AFINN
+
+```{r}
+token_data %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  count(value) %>% 
+  ggplot(aes(x = value,y = n,fill = value)) +
+  geom_col() +
+  labs(x = 'Score',
+       y = 'Frequency',
+       title = 'Sensiment Scores') +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+### AFINN with different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  count(value) %>% 
+  ggplot(aes(x = value,y = n,fill = value)) +
+  geom_col() +
+  labs(x = 'Score',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Sensiment Scores') +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  count(value) %>% 
+  ggplot(aes(x = value,y = n,fill = value)) +
+  geom_col() +
+  labs(x = 'Score',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: no',
+       title = 'Sensiment Scores') +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  count(value) %>% 
+  ggplot(aes(x = value,y = n,fill = value)) +
+  geom_col() +
+  labs(x = 'Score',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Sensiment Scores') +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  count(value) %>% 
+  ggplot(aes(x = value,y = n,fill = value)) +
+  geom_col() +
+  labs(x = 'Score',
+       y = 'Frequency',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Sensiment Scores') +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+### Sentiment proportion (BING)
+
+```{r}
+token_data %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 7))
+```
+### Sentiment proportion (BING) with different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: no',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(bing_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 7))
+```
+### Sentiment proportion (NRC)
+
+```{r}
+token_data %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 7))
+```
+### Sentiment proportion (NRC) with different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: no',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 10))
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(nrc_sentiment,by = 'word') %>% 
+  count(department,sentiment) %>% 
+  ggplot(aes(x = department,y = n,fill = sentiment)) +
+  geom_bar(stat = 'identity',position = 'fill') +
+  labs(x = 'Department',
+       y = 'Proportion',
+       fill = 'Sentiment',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Sentiment by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        text = element_text(size = 7))
+```
+### Sentiment score (AFINN)
+
+```{r}
+token_data %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  group_by(department) %>% 
+  summarise(score = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(department = fct_reorder(department,score)) %>% 
+  ggplot(aes(x = department,y = score,fill = score)) +
+  geom_col() +
+  labs(x = 'Department',
+       y = 'Sentiment Score',
+       title = 'Sentiment Score by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 7),
+        legend.position = 'none')
+```
+### Sentiment score (AFINN) by different labels
+
+```{r}
+token_data %>% 
+  filter(label=='yes') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  group_by(department) %>% 
+  summarise(score = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(department = fct_reorder(department,score)) %>% 
+  ggplot(aes(x = department,y = score,fill = score)) +
+  geom_col() +
+  labs(x = 'Department',
+       y = 'Sentiment Score',
+       subtitle = 'Attitude to AI: yes',
+       title = 'Sentiment Score by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='no') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  group_by(department) %>% 
+  summarise(score = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(department = fct_reorder(department,score)) %>% 
+  ggplot(aes(x = department,y = score,fill = score)) +
+  geom_col() +
+  labs(x = 'Department',
+       y = 'Sentiment Score',
+       subtitle = 'Attitude to AI: no',
+       title = 'Sentiment Score by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='neutral') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  group_by(department) %>% 
+  summarise(score = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(department = fct_reorder(department,score)) %>% 
+  ggplot(aes(x = department,y = score,fill = score)) +
+  geom_col() +
+  labs(x = 'Department',
+       y = 'Sentiment Score',
+       subtitle = 'Attitude to AI: neutral',
+       title = 'Sentiment Score by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = 'none')
+```
+```{r}
+token_data %>% 
+  filter(label=='unknown') %>% 
+  inner_join(afinn_sentiment,by = 'word') %>% 
+  group_by(department) %>% 
+  summarise(score = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(department = fct_reorder(department,score)) %>% 
+  ggplot(aes(x = department,y = score,fill = score)) +
+  geom_col() +
+  labs(x = 'Department',
+       y = 'Sentiment Score',
+       subtitle = 'Attitude to AI: unknown',
+       title = 'Sentiment Score by Department') +
+  coord_flip() +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 6),
+        legend.position = 'none')
+```
+## Word clouds
+
+```{r}
+token_data %>%
+  inner_join(bing_sentiment,by = 'word') %>%
+  count(word, sentiment, sort = TRUE) %>%
+  pivot_wider(names_from = 'sentiment',
+              values_from = 'n',
+              values_fill = 0) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = 'word') %>% 
+  comparison.cloud(colors = c("red", "blue"),
+                   max.words = 80)
+```
+## Word clouds by different labels
+
+```{r}
+token_data %>%
+  filter(label=='yes') %>% 
+  inner_join(bing_sentiment,by = 'word') %>%
+  count(word, sentiment, sort = TRUE) %>%
+  pivot_wider(names_from = 'sentiment',
+              values_from = 'n',
+              values_fill = 0) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = 'word') %>% 
+  comparison.cloud(colors = c("blue", "red"),
+                   max.words = 80)
+```
+```{r}
+token_data %>%
+  filter(label=='no') %>% 
+  inner_join(bing_sentiment,by = 'word') %>%
+  count(word, sentiment, sort = TRUE) %>%
+  pivot_wider(names_from = 'sentiment',
+              values_from = 'n',
+              values_fill = 0) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = 'word') %>% 
+  comparison.cloud(colors = c("red", "blue"),
+                   max.words = 80)
+```
+```{r}
+token_data %>%
+  filter(label=='neutral') %>% 
+  inner_join(bing_sentiment,by = 'word') %>%
+  count(word, sentiment, sort = TRUE) %>%
+  pivot_wider(names_from = 'sentiment',
+              values_from = 'n',
+              values_fill = 0) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = 'word') %>% 
+  comparison.cloud(colors = c("blue", "red"),
+                   max.words = 80)
+```
+```{r}
+token_data %>%
+  filter(label=='unknown') %>% 
+  inner_join(bing_sentiment,by = 'word') %>%
+  count(word, sentiment, sort = TRUE) %>%
+  pivot_wider(names_from = 'sentiment',
+              values_from = 'n',
+              values_fill = 0) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = 'word') %>% 
+  comparison.cloud(colors = c("blue", "red"),
+                   max.words = 80)
+```
+## Network diagrams
+
+### Count pairs of words within PDFs
+
+```{r}
+word_cooccurences_pdf = pairwise_count(tbl = token_data,
+                                       item = 'word',
+                                       feature = 'id',
+                                       sort = T)
+```
+### Co-occurence of words within PDFs
+
+```{r}
+set.seed(1)
+word_cooccurences_pdf %>%
+  filter(item1 %in% ai_words | item2 %in% ai_words) %>% 
+  top_n(1000) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = 'fr') +
+  geom_edge_link(aes(edge_alpha = n,edge_width = n)) +
+  geom_node_point(color = 'lightblue',size = 3) +
+  geom_node_text(aes(label = name),vjust = 1.8,col = 'blue') +
+  labs(title = 'Co-Occurrence of Words') +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+### Find correlations of words within PDFs
+
+```{r}
+word_correlations_pdf = token_data %>%
+  add_count(word) %>%
+  filter(n>100) %>%
+  select(-n) %>%
+  pairwise_cor(item = word,
+               feature = id,
+               sort = T)
+```
+```{r}
+set.seed(1)
+word_correlations_pdf %>%
+  filter(item1 %in% ai_words | item2 %in% ai_words) %>% 
+  filter(correlation > 0.22) %>%
+  as_tbl_graph() %>%
+  ggraph(layout = 'fr') +
+  geom_edge_link(aes(edge_alpha = correlation),show.legend = F) +
+  geom_node_point(color = 'lightblue',size = 2) +
+  geom_node_text(aes(label = name), repel = T) +
+  labs(title = 'Correlation of Words') +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
