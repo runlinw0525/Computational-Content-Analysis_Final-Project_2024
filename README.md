@@ -1,6 +1,8 @@
 # Computational-Content-Analysis_Final-Project_2024
 This is the repository for the course's final project
 
+Final Project Title: Adapting to the AI Era: An Analysis of U.S. Public University Course Syllabi and Educational Policies in Response to (Generative) AI Technologies
+
 Group Name: AI in Course Syllabi
 
 Group Member: Runlin Wang
